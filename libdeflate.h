@@ -268,7 +268,9 @@ libdeflate_gzip_decompress_ex(struct libdeflate_decompressor *decompressor,
 			      const void *in, size_t in_nbytes,
 			      void *out, size_t out_nbytes_avail,
 			      size_t *actual_in_nbytes_ret,
-			      size_t *actual_out_nbytes_ret);
+			      size_t *actual_out_nbytes_ret,
+			      u32 *checksum,
+			      bool validate);
 
 /*
  * libdeflate_free_decompressor() frees a decompressor that was allocated with
