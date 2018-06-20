@@ -219,7 +219,9 @@ do_decompress(struct libdeflate_decompressor *decompressor,
 						       uncompressed_data,
 						       uncompressed_size,
 						       &actual_in_nbytes,
-						       &actual_out_nbytes);
+						       &actual_out_nbytes,
+						       NULL,
+						       true);
 
 		if (result == LIBDEFLATE_INSUFFICIENT_SPACE) {
 			if (uncompressed_size * 2 <= uncompressed_size) {
