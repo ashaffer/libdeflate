@@ -37,7 +37,9 @@ libdeflate_gzip_decompress_ex(struct libdeflate_decompressor *d,
 			      const void *in, size_t in_nbytes,
 			      void *out, size_t out_nbytes_avail,
 			      size_t *actual_in_nbytes_ret,
-			      size_t *actual_out_nbytes_ret)
+			      size_t *actual_out_nbytes_ret,
+			      u32 *checksum,
+			      bool validate)
 {
 	const u8 *in_next = in;
 	const u8 * const in_end = in_next + in_nbytes;
@@ -120,8 +122,11 @@ libdeflate_gzip_decompress_ex(struct libdeflate_decompressor *d,
 	in_next += actual_in_nbytes;
 
 	/* CRC32 */
-	if (libdeflate_crc32(0, out, actual_out_nbytes) !=
-	    get_unaligned_le32(in_next))
+	u32 cs = get_unaligned_le32(in_next);
+	if (checksum != NULL)
+		*checksum = cs;
+	
+	if (validate && libdeflate_crc32(0, out, actual_out_nbytes) != cs)
 		return LIBDEFLATE_BAD_DATA;
 	in_next += 4;
 
@@ -144,5 +149,6 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor *d,
 {
 	return libdeflate_gzip_decompress_ex(d, in, in_nbytes,
 					     out, out_nbytes_avail,
-					     NULL, actual_out_nbytes_ret);
+					     NULL, actual_out_nbytes_ret,
+					     NULL, true);
 }
