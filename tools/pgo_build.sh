@@ -5,7 +5,7 @@
 set -eu
 
 MAKE="make -j$(grep -c processor /proc/cpuinfo)"
-DATAFILE="$HOME/data/silesia"
+DATAFILE="$HOME/data/smokedata"
 
 $MAKE benchmark > /dev/null
 echo "====================="
