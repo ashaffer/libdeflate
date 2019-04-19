@@ -29,24 +29,32 @@ override CFLAGS :=							\
 	$(call cc-option,-Wstrict-prototypes)				\
 	$(call cc-option,-Wvla)
 
+# We don't define any CPPFLAGS, but support the user specifying it.
+
 ##############################################################################
 
-STATIC_LIB_SUFFIX := .a
-SHARED_LIB_SUFFIX := .so
-SHARED_LIB_CFLAGS := -fPIC
-PROG_SUFFIX       :=
-PROG_CFLAGS       :=
-HARD_LINKS        := 1
+PREFIX ?= /usr
+
+SOVERSION          := 0
+STATIC_LIB_SUFFIX  := .a
+SHARED_LIB_SUFFIX  := .so.$(SOVERSION)
+SHARED_LIB_CFLAGS  := -fPIC
+SHARED_LIB_LDFLAGS := -Wl,-soname=libdeflate$(SHARED_LIB_SUFFIX)
+PROG_SUFFIX        :=
+PROG_CFLAGS        :=
+HARD_LINKS         := 1
 
 # Compiling for Windows with MinGW?
 ifneq ($(findstring -mingw,$(shell $(CC) -dumpmachine 2>/dev/null)),)
-    STATIC_LIB_SUFFIX := .lib
-    SHARED_LIB_SUFFIX := .dll
-    SHARED_LIB_CFLAGS :=
-    PROG_SUFFIX       := .exe
-    PROG_CFLAGS       := -static -municode
-    HARD_LINKS        :=
-    override CFLAGS   := $(CFLAGS) $(call cc-option,-Wno-pedantic-ms-format)
+    SOVERSION          :=
+    STATIC_LIB_SUFFIX  := static.lib
+    SHARED_LIB_SUFFIX  := .dll
+    SHARED_LIB_CFLAGS  :=
+    SHARED_LIB_LDFLAGS := -Wl,--out-implib,libdeflate.lib
+    PROG_SUFFIX        := .exe
+    PROG_CFLAGS        := -static -municode
+    HARD_LINKS         :=
+    override CFLAGS    := $(CFLAGS) $(call cc-option,-Wno-pedantic-ms-format)
 
     # If AR was not already overridden, then derive it from $(CC).
     # Note that CC may take different forms, e.g. "cc", "gcc",
@@ -75,7 +83,7 @@ endif
 
 ##############################################################################
 
-COMMON_HEADERS := $(wildcard common/*.h)
+COMMON_HEADERS := $(wildcard common/*.h) libdeflate.h
 DEFAULT_TARGETS :=
 
 #### Library
@@ -116,11 +124,12 @@ SHARED_LIB_OBJ := $(LIB_SRC:.c=.shlib.o)
 
 # Compile static library object files
 $(STATIC_LIB_OBJ): %.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
-	$(QUIET_CC) $(CC) -o $@ -c $(LIB_CFLAGS) $<
+	$(QUIET_CC) $(CC) -o $@ -c $(CPPFLAGS) $(LIB_CFLAGS) $<
 
 # Compile shared library object files
 $(SHARED_LIB_OBJ): %.shlib.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
-	$(QUIET_CC) $(CC) -o $@ -c $(LIB_CFLAGS) $(SHARED_LIB_CFLAGS) -DLIBDEFLATE_DLL $<
+	$(QUIET_CC) $(CC) -o $@ -c $(CPPFLAGS) $(LIB_CFLAGS) \
+		$(SHARED_LIB_CFLAGS) -DLIBDEFLATE_DLL $<
 
 # Create static library
 $(STATIC_LIB):$(STATIC_LIB_OBJ)
@@ -130,13 +139,21 @@ DEFAULT_TARGETS += $(STATIC_LIB)
 
 # Create shared library
 $(SHARED_LIB):$(SHARED_LIB_OBJ)
-	$(QUIET_CCLD) $(CC) -o $@ $(LDFLAGS) $(LIB_CFLAGS) -shared $+
+	$(QUIET_CCLD) $(CC) -o $@ $(LDFLAGS) $(LIB_CFLAGS) \
+		$(SHARED_LIB_LDFLAGS) -shared $+
 
 DEFAULT_TARGETS += $(SHARED_LIB)
 
-# Rebuild if CC or LIB_CFLAGS changed
+ifdef SOVERSION
+# Create the symlink libdeflate.so => libdeflate.so.$SOVERSION
+libdeflate.so:$(SHARED_LIB)
+	$(QUIET_LN) ln -sf $+ $@
+DEFAULT_TARGETS += libdeflate.so
+endif
+
+# Rebuild if CC, LIB_CFLAGS, or CPPFLAGS changed
 .lib-cflags: FORCE
-	@flags='$(CC):$(LIB_CFLAGS)'; \
+	@flags='$(CC):$(LIB_CFLAGS):$(CPPFLAGS)'; \
 	if [ "$$flags" != "`cat $@ 2>/dev/null`" ]; then \
 		[ -e $@ ] && echo "Rebuilding library due to new compiler flags"; \
 		echo "$$flags" > $@; \
@@ -151,38 +168,51 @@ PROG_CFLAGS += $(CFLAGS)		 \
 	       -D_FILE_OFFSET_BITS=64	 \
 	       -DHAVE_CONFIG_H
 
-PROG_COMMON_HEADERS := programs/prog_util.h programs/config.h
-PROG_COMMON_SRC     := programs/prog_util.c programs/tgetopt.c
-NONTEST_PROGRAM_SRC := programs/gzip.c
-TEST_PROGRAM_SRC    := programs/benchmark.c programs/test_checksums.c \
-			programs/checksum.c
+ALL_PROG_COMMON_HEADERS := programs/config.h \
+			   programs/prog_util.h \
+			   programs/test_util.h
+PROG_COMMON_SRC      := programs/prog_util.c \
+			programs/tgetopt.c
+NONTEST_PROG_SRC     := programs/gzip.c
+TEST_PROG_COMMON_SRC := programs/test_util.c
+TEST_PROG_SRC        := programs/benchmark.c \
+			programs/checksum.c \
+			programs/test_checksums.c \
+			programs/test_incomplete_codes.c \
+			programs/test_slow_decompression.c
 
-NONTEST_PROGRAMS := $(NONTEST_PROGRAM_SRC:programs/%.c=%$(PROG_SUFFIX))
+NONTEST_PROGRAMS := $(NONTEST_PROG_SRC:programs/%.c=%$(PROG_SUFFIX))
 DEFAULT_TARGETS  += $(NONTEST_PROGRAMS)
-TEST_PROGRAMS    := $(TEST_PROGRAM_SRC:programs/%.c=%$(PROG_SUFFIX))
+TEST_PROGRAMS    := $(TEST_PROG_SRC:programs/%.c=%$(PROG_SUFFIX))
 
-PROG_COMMON_OBJ     := $(PROG_COMMON_SRC:%.c=%.o)
-NONTEST_PROGRAM_OBJ := $(NONTEST_PROGRAM_SRC:%.c=%.o)
-TEST_PROGRAM_OBJ    := $(TEST_PROGRAM_SRC:%.c=%.o)
-PROG_OBJ := $(PROG_COMMON_OBJ) $(NONTEST_PROGRAM_OBJ) $(TEST_PROGRAM_OBJ)
+PROG_COMMON_OBJ      := $(PROG_COMMON_SRC:%.c=%.o)
+NONTEST_PROG_OBJ     := $(NONTEST_PROG_SRC:%.c=%.o)
+TEST_PROG_COMMON_OBJ := $(TEST_PROG_COMMON_SRC:%.c=%.o)
+TEST_PROG_OBJ        := $(TEST_PROG_SRC:%.c=%.o)
+
+ALL_PROG_OBJ	     := $(PROG_COMMON_OBJ) $(NONTEST_PROG_OBJ) \
+			$(TEST_PROG_COMMON_OBJ) $(TEST_PROG_OBJ)
 
 # Generate autodetected configuration header
 programs/config.h:programs/detect.sh .prog-cflags
 	$(QUIET_GEN) CC="$(CC)" CFLAGS="$(PROG_CFLAGS)" $< > $@
 
 # Compile program object files
-$(PROG_OBJ): %.o: %.c $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
-	$(QUIET_CC) $(CC) -o $@ -c $(PROG_CFLAGS) $<
+$(ALL_PROG_OBJ): %.o: %.c $(ALL_PROG_COMMON_HEADERS) $(COMMON_HEADERS) \
+			.prog-cflags
+	$(QUIET_CC) $(CC) -o $@ -c $(CPPFLAGS) $(PROG_CFLAGS) $<
 
 # Link the programs.
 #
 # Note: the test programs are not compiled by default.  One reason is that the
 # test programs must be linked with zlib for doing comparisons.
 
-$(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
+$(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) \
+			$(STATIC_LIB)
 	$(QUIET_CCLD) $(CC) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+
 
-$(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
+$(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) \
+			$(TEST_PROG_COMMON_OBJ) $(STATIC_LIB)
 	$(QUIET_CCLD) $(CC) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz
 
 ifdef HARD_LINKS
@@ -197,9 +227,9 @@ endif
 
 DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)
 
-# Rebuild if CC or PROG_CFLAGS changed
+# Rebuild if CC, PROG_CFLAGS, or CPPFLAGS changed
 .prog-cflags: FORCE
-	@flags='$(CC):$(PROG_CFLAGS)'; \
+	@flags='$(CC):$(PROG_CFLAGS):$(CPPFLAGS)'; \
 	if [ "$$flags" != "`cat $@ 2>/dev/null`" ]; then \
 		[ -e $@ ] && echo "Rebuilding programs due to new compiler flags"; \
 		echo "$$flags" > $@; \
@@ -210,18 +240,20 @@ DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)
 all:$(DEFAULT_TARGETS)
 
 install:all
-	install -Dm644 -t $(DESTDIR)/usr/lib $(STATIC_LIB)
-	install -Dm755 -t $(DESTDIR)/usr/lib $(SHARED_LIB)
-	install -Dm644 -t $(DESTDIR)/usr/include libdeflate.h
-	install -Dm755 gzip $(DESTDIR)/usr/bin/libdeflate-gzip
-	ln -f $(DESTDIR)/usr/bin/libdeflate-gzip $(DESTDIR)/usr/bin/libdeflate-gunzip
+	install -Dm644 -t $(DESTDIR)$(PREFIX)/lib $(STATIC_LIB)
+	install -Dm755 -t $(DESTDIR)$(PREFIX)/lib $(SHARED_LIB)
+	ln -sf $(SHARED_LIB) $(DESTDIR)$(PREFIX)/lib/libdeflate.so
+	install -Dm644 -t $(DESTDIR)$(PREFIX)/include libdeflate.h
+	install -Dm755 gzip $(DESTDIR)$(PREFIX)/bin/libdeflate-gzip
+	ln -f $(DESTDIR)$(PREFIX)/bin/libdeflate-gzip $(DESTDIR)$(PREFIX)/bin/libdeflate-gunzip
 
 uninstall:
-	rm -f $(DESTDIR)/usr/lib/$(STATIC_LIB) \
-		$(DESTDIR)/usr/lib/$(SHARED_LIB) \
-		$(DESTDIR)/usr/include/libdeflate.h \
-		$(DESTDIR)/usr/bin/libdeflate-gzip \
-		$(DESTDIR)/usr/bin/libdeflate-gunzip
+	rm -f $(DESTDIR)$(PREFIX)/lib/$(STATIC_LIB) \
+		$(DESTDIR)$(PREFIX)/lib/$(SHARED_LIB) \
+		$(DESTDIR)$(PREFIX)/lib/libdeflate.so \
+		$(DESTDIR)$(PREFIX)/include/libdeflate.h \
+		$(DESTDIR)$(PREFIX)/bin/libdeflate-gzip \
+		$(DESTDIR)$(PREFIX)/bin/libdeflate-gunzip
 
 test_programs:$(TEST_PROGRAMS)
 

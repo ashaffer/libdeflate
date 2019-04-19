@@ -6,6 +6,7 @@
 *.o
 *.obj
 *.so
+*.so.*
 /.lib-cflags
 /.prog-cflags
 /programs/config.h
@@ -14,6 +15,6 @@
 /gzip
 /gunzip
 /run_tests.log
-/test_checksums
+/test_*
 tags
 cscope*

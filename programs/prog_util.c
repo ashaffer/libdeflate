@@ -30,13 +30,11 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <time.h>
 #ifdef _WIN32
 #  include <windows.h>
 #else
 #  include <unistd.h>
 #  include <sys/mman.h>
-#  include <sys/time.h>
 #endif
 
 #ifndef O_BINARY
@@ -105,61 +103,6 @@ xmalloc(size_t size)
 	if (p == NULL)
 		msg("Out of memory");
 	return p;
-}
-
-/*
- * Return the number of timer ticks that have elapsed since some unspecified
- * point fixed at the start of program execution
- */
-u64
-timer_ticks(void)
-{
-#ifdef _WIN32
-	LARGE_INTEGER count;
-	QueryPerformanceCounter(&count);
-	return count.QuadPart;
-#elif defined(HAVE_CLOCK_GETTIME)
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (1000000000 * (u64)ts.tv_sec) + ts.tv_nsec;
-#else
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return (1000000 * (u64)tv.tv_sec) + tv.tv_usec;
-#endif
-}
-
-/*
- * Return the number of timer ticks per second
- */
-static u64
-timer_frequency(void)
-{
-#ifdef _WIN32
-	LARGE_INTEGER freq;
-	QueryPerformanceFrequency(&freq);
-	return freq.QuadPart;
-#elif defined(HAVE_CLOCK_GETTIME)
-	return 1000000000;
-#else
-	return 1000000;
-#endif
-}
-
-/*
- * Convert a number of elapsed timer ticks to milliseconds
- */
-u64 timer_ticks_to_ms(u64 ticks)
-{
-	return ticks * 1000 / timer_frequency();
-}
-
-/*
- * Convert a byte count and a number of elapsed timer ticks to MB/s
- */
-u64 timer_MB_per_s(u64 bytes, u64 ticks)
-{
-	return bytes * timer_frequency() / ticks / 1000000;
 }
 
 /*
