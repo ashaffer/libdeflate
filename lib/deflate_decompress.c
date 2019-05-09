@@ -61,7 +61,7 @@
  * Theoretically, these checks could be disabled for specialized applications
  * where all input to the decompressor will be trusted.
  */
-#if 0
+#if 1
 #  pragma message("UNSAFE DECOMPRESSION IS ENABLED. THIS MUST ONLY BE USED IF THE DECOMPRESSOR INPUT WILL ALWAYS BE TRUSTED!")
 #  define SAFETY_CHECK(expr)	(void)(expr)
 #else
